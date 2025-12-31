@@ -63,8 +63,4 @@ Student at Kayseri Science High School. Specializing in Turkish LLM architecture
 
 **Goal:** To become Turkey's top AI engineer.
 
----
-## 📜 License
 
-This project is licensed under **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**. 
-**Commercial use is strictly prohibited.**
