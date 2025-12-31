@@ -1,66 +1,124 @@
-# ⚡ TurboTensors v4.0 - JET MODE 🚀
+# ⚡ TurboTensors v4.0 — JET MODE (Experimental)
 
-**TurboTensors** is a high-performance inference engine built from scratch to eliminate the overhead and latency of standard CPU libraries. Specifically optimized for Turkish Large Language Models like **Kayra-1-exp**, it enables a "real-time" experience even on hardware without a dedicated GPU.
+TurboTensors is an experimental, low-level CPU inference engine focused on minimizing framework overhead and maximizing real-time token generation on low-end and mid-range CPUs.
 
-> "Designed for those tired of the heavy footprint and high resource consumption of HuggingFace, focusing purely on raw performance." — **sixfingerdev**
+It is designed primarily for small to mid-sized language models (approximately 50M–300M parameters) and has been tested mainly with Turkish LLMs such as Kayra-1-exp.
 
----
-
-## ✨ Key Features
-
-* **Numba-JIT Kernels:** Compiles Python logic into machine code via LLVM at runtime, delivering C++ level execution speeds.
-* **Fused Operator Logic:** Combines operations like SiLU activation and RMSNorm at the memory level (Kernel Fusion) to minimize bandwidth bottlenecks between CPU and RAM.
-* **Advanced KV Caching:** Implements distinct mathematical paths for Prefill (understanding) and Decode (token generation) phases to avoid redundant computations.
-* **Zero-Copy Safetensors:** Processes model weights (BF16, F16, or F32) with manual bit-shifting and optimized memory management.
-* **Parallel Execution:** Fully utilizes every physical CPU core using OMP_NUM_THREADS and MKL optimizations.
+IMPORTANT:
+TurboTensors is NOT a general-purpose replacement for optimized BLAS-based frameworks on high-end CPUs.
+It intentionally prioritizes low-overhead execution over heavy vectorized libraries.
 
 ---
 
-## 📊 Performance (Benchmark)
+## 🎯 Design Philosophy
 
-CPU test results using the **Kayra-1-exp (85M Params)** model:
+Modern CPU inference stacks (PyTorch, oneDNN, MKL) perform exceptionally well on high-end CPUs,
+but introduce significant overhead on resource-constrained systems.
 
-| Engine             | Speed (Token/s) | RAM Efficiency | Latency (First Token) |
-| :----------------- | :-------------- | :------------- | :-------------------- |
-| **TurboTensors v4**| **~45-60 tok/s**| **High** | **Ultra Low** |
-| HuggingFace (CPU)  | ~12-18 tok/s    | Moderate       | High                  |
+TurboTensors targets:
+- Older CPUs
+- Limited cache sizes
+- No AVX-512
+- GPU-less environments
+- Edge / experimental setups
 
-*Note: Benchmarks were conducted on a standard consumer-grade laptop CPU.*
+The goal is predictable, low-latency inference, not peak FLOPS.
+
+---
+
+## ✨ Core Features
+
+- Numba-JIT Kernels (LLVM)
+  Critical execution paths are JIT-compiled to native machine code, avoiding Python interpreter overhead.
+
+- Fused Operator Execution
+  Operations such as RMSNorm and activation functions are fused to reduce memory traffic and cache misses.
+
+- Prefill vs Decode Separation
+  Distinct computational paths for context understanding and token generation, reducing redundant work.
+
+- KV Cache Awareness
+  Aggressive reuse of key/value tensors during autoregressive decoding.
+
+- Zero-Copy Safetensors Loading
+  Weights are accessed with minimal memory duplication (BF16 / F16 / F32 supported).
+
+- Thread-Level Parallelism
+  Uses nogil-style execution and explicit thread control to avoid Python GIL bottlenecks.
+
+---
+
+## 📊 Performance Snapshot
+
+Test model: Kayra-1-exp (~85M parameters)
+Hardware: consumer-grade laptop CPU (non-server, non-AVX512)
+
+TurboTensors v4: ~45–60 tokens/s, very low first-token latency  
+HuggingFace (CPU): ~12–18 tokens/s, high first-token latency
+
+NOTE:
+Results are hardware-dependent and primarily reflect performance on low to mid-tier CPUs.
+On high-end CPUs, optimized BLAS-based engines may outperform TurboTensors.
 
 ---
 
 ## 🛠️ Installation
 
-Install the necessary dependencies via your terminal:
-
-pip install numpy numba safetensors transformers huggingface_hub
-
-## 🚀 Quick Start
-
-Example usage scenario:
-
-1. Load the model and initialize Jet Mode.
-2. Start lightning-fast generation with streaming support.
-
-Developer Note: Ensure 'use_cache=True' is passed in the forward method to maximize KV-Cache efficiency.
+Dependencies:
+- numpy
+- numba
+- safetensors
+- transformers
+- huggingface_hub
 
 ---
 
-## 🧠 Engineering Insights
+## 🚀 Usage (Conceptual)
 
-This project bypasses Python's dynamic overhead using the following techniques:
+1. Load model weights
+2. Enable Jet Mode
+3. Generate tokens with streaming support
 
-1. **Memory Contiguity:** Keeps matrices contiguous in memory to maximize CPU L1/L2 Cache hit rates.
-2. **Fast Sampling:** Implements Top-K sampling without sorting all logits (partial sort), significantly reducing computational cost.
-3. **Thread Optimization:** Utilizes 'nogil=True' to bypass Python's Global Interpreter Lock (GIL) for true parallel processing.
+Developer note:
+Enable use_cache=True to fully benefit from KV caching.
 
 ---
 
-## 👨‍💻 Developer
+## 🧠 Engineering Notes
 
-**Enes Altıparmak (sixfingerdev)**
-Student at Kayseri Science High School. Specializing in Turkish LLM architectures, tokenizer optimization, and low-level software performance.
+Key ideas explored in this project:
+- Cache-friendly memory layouts (L1/L2 aware)
+- Partial Top-K sampling to avoid full logit sorting
+- Manual control over compute granularity
+- Avoidance of heavy framework abstractions
 
-**Goal:** To become Turkey's top AI engineer.
+This project intentionally trades generality for clarity and control.
 
+---
 
+## 🚧 Limitations
+
+- Not optimized for AVX-512 or large-core-count servers
+- Not intended for very large models (1B+ parameters)
+- Limited numerical precision experiments so far
+
+TurboTensors is best viewed as a research and engineering exploration, not a production-ready engine.
+
+---
+
+## 👨‍💻 Author
+
+Enes Altıparmak (sixfingerdev)  
+Student — Kayseri Science High School
+
+Interests:
+- CPU inference optimization
+- Turkish language models
+- Tokenization and memory efficiency
+- Low-level performance engineering
+
+---
+
+## 📌 Motivation
+
+Understanding why systems are slow matters more than blindly using faster ones.
