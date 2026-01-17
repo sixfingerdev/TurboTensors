@@ -64,7 +64,9 @@ On high-end CPUs, optimized BLAS-based engines may outperform TurboTensors.
 
 ## 🔬 Benchmark Results
 
-Comprehensive benchmarks of core TurboTensors operations running on a GitHub Actions runner (Ubuntu, 4-core CPU):
+Benchmarks of core TurboTensors operations running on a GitHub Actions runner (Ubuntu, 4-core CPU).
+
+**Note:** These benchmarks measure individual JIT-compiled kernel performance using a standalone test script. They demonstrate the efficiency of the low-level operations but do not represent end-to-end model generation performance.
 
 ### Core Operation Performance
 
@@ -76,9 +78,15 @@ Comprehensive benchmarks of core TurboTensors operations running on a GitHub Act
 | Attention (Decode, 1 token) | 0.093 | Single-token attention |
 | Top-K Sampling | 2.410 | Token selection |
 
-**Estimated Throughput:** ~386 tokens/second 
+**Theoretical Throughput (based on individual operations):** ~386 tokens/second 
 
-*Note: This estimate is based on individual operation benchmarks and does not reflect end-to-end generation performance. Actual generation throughput will be lower due to sequential dependencies, memory overhead, and additional operations not measured here.*
+*This is a theoretical upper bound calculated from individual operation timings. Actual end-to-end generation performance will be significantly lower due to:*
+- *Sequential dependencies between operations*
+- *Memory transfer overhead*
+- *Multiple layer traversals*
+- *Additional operations (embedding lookups, projections, etc.)*
+
+For real-world performance, refer to the "Performance Snapshot" section above showing ~45-60 tokens/s on consumer hardware.
 
 ### Key Performance Characteristics
 
@@ -87,7 +95,9 @@ Comprehensive benchmarks of core TurboTensors operations running on a GitHub Act
 - **Parallel Processing:** Numba parallel loops for multi-core utilization
 - **Cache Optimization:** KV cache reuse during autoregressive decoding
 
-### Example Output
+### Example Benchmark Output
+
+The following output is from a standalone benchmark script that measures individual kernel performance:
 
 ```
 ======================================================================
@@ -134,14 +144,15 @@ Attention (Decode, 1 tok)       0.093
 Top-K Sampling                  2.410
 ----------------------------------------------------------------------
 
-Estimated decode throughput: ~386.6 tokens/second
+Theoretical decode throughput: ~386.6 tokens/second
+(Based on individual operation timings)
 
 ======================================================================
 ✓ BENCHMARK COMPLETE!
 ======================================================================
 ```
 
-**Note:** Actual full-model performance will vary based on model architecture, hardware, and workload characteristics. These benchmarks represent individual operation performance on standard GitHub Actions infrastructure.
+**Note:** This benchmark output demonstrates kernel-level performance. Actual model generation performance depends on the complete architecture and is typically lower. See the "Performance Snapshot" section for real-world generation speeds.
 
 ---
 
