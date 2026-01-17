@@ -5,4 +5,4 @@ transformers>=4.30.0
 huggingface_hub>=0.16.0
 
 # Optional dependencies
-# torch>=2.0.0  # Only needed for Hugging Face comparison benchmarks
+# torch>=2.0.0  # Only needed for Hugging Face benchmark comparison in main.py (lines 876-912)

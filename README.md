@@ -236,7 +236,7 @@ output = model.generate(
 )
 ```
 
-**Developer note:** Always enable `use_cache=True` to fully benefit from KV caching during generation.
+**Note:** KV caching is automatically enabled during generation to maximize performance. The engine reuses key/value tensors during autoregressive decoding, significantly reducing redundant computations.
 
 ---
 
