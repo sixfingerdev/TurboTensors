@@ -76,7 +76,9 @@ Comprehensive benchmarks of core TurboTensors operations running on a GitHub Act
 | Attention (Decode, 1 token) | 0.093 | Single-token attention |
 | Top-K Sampling | 2.410 | Token selection |
 
-**Estimated Throughput:** ~386 tokens/second (based on core operations)
+**Estimated Throughput:** ~386 tokens/second 
+
+*Note: This estimate is based on individual operation benchmarks and does not reflect end-to-end generation performance. Actual generation throughput will be lower due to sequential dependencies, memory overhead, and additional operations not measured here.*
 
 ### Key Performance Characteristics
 
@@ -165,7 +167,9 @@ The following packages will be installed:
 - **numba** (>=0.56.0) - JIT compilation for performance
 - **transformers** (>=4.30.0) - Model tokenizer support
 - **huggingface_hub** (>=0.16.0) - Model downloading
-- **torch** (>=2.0.0) - PyTorch backend (optional, for comparisons)
+
+**Optional dependency:**
+- **torch** (>=2.0.0) - Only needed for HuggingFace comparison benchmarks (commented out in requirements.txt)
 
 ### Step 3: Run the Code
 ```bash
