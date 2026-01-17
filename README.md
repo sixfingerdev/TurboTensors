@@ -62,25 +62,181 @@ On high-end CPUs, optimized BLAS-based engines may outperform TurboTensors.
 
 ---
 
-## 🛠️ Installation
+## 🔬 Benchmark Results
 
-Dependencies:
-- numpy
-- numba
-- safetensors
-- transformers
-- huggingface_hub
+Benchmarks of core TurboTensors operations running on a GitHub Actions runner (Ubuntu, 4-core CPU).
+
+**Note:** These benchmarks measure individual JIT-compiled kernel performance using a standalone test script. They demonstrate the efficiency of the low-level operations but do not represent end-to-end model generation performance.
+
+### Core Operation Performance
+
+| Operation | Time (ms) | Description |
+|-----------|-----------|-------------|
+| RMS Norm | 0.024 | Layer normalization |
+| SiLU × Gate (Fused) | 0.060 | Fused activation function |
+| Attention (Prefill, 32 tokens) | 0.436 | Multi-token attention |
+| Attention (Decode, 1 token) | 0.093 | Single-token attention |
+| Top-K Sampling | 2.410 | Token selection |
+
+**Theoretical Throughput (based on individual operations):** ~386 tokens/second 
+
+*This is a theoretical upper bound calculated from individual operation timings. Actual end-to-end generation performance will be significantly lower due to:*
+- *Sequential dependencies between operations*
+- *Memory transfer overhead*
+- *Multiple layer traversals*
+- *Additional operations (embedding lookups, projections, etc.)*
+
+For real-world performance, refer to the "Performance Snapshot" section above showing ~45-60 tokens/s on consumer hardware.
+
+### Key Performance Characteristics
+
+- **JIT Compilation:** ~5.2 seconds warmup time (one-time cost)
+- **Memory Efficiency:** Zero-copy safetensors loading
+- **Parallel Processing:** Numba parallel loops for multi-core utilization
+- **Cache Optimization:** KV cache reuse during autoregressive decoding
+
+### Example Benchmark Output
+
+The following output is from a standalone benchmark script that measures individual kernel performance:
+
+```
+======================================================================
+TURBOTENSORS v4.0 - CORE OPERATIONS BENCHMARK
+======================================================================
+
+Configuration:
+  Batch size: 1
+  Sequence length: 128
+  Hidden size: 640
+  Attention heads: 10
+  Head dimension: 64
+  Vocabulary size: 32000
+
+ Warming up JIT kernels...
+🔥 Warming up JIT kernels... ✓ 5.25s
+✓ Warmup completed in 5.25s
+
+ [1/5] Benchmarking RMS Norm...
+     Average time: 0.024 ms
+
+ [2/5] Benchmarking SiLU * Gate (Fused)...
+     Average time: 0.060 ms
+
+ [3/5] Benchmarking Attention (Prefill)...
+     Average time: 0.436 ms
+
+ [4/5] Benchmarking Attention (Decode)...
+     Average time: 0.093 ms
+
+ [5/5] Benchmarking Top-K Sampling...
+     Average time: 2.410 ms
+
+======================================================================
+BENCHMARK SUMMARY
+======================================================================
+
+Operation                    Time (ms)
+----------------------------------------------------------------------
+RMS Norm                        0.024
+SiLU * Gate (Fused)             0.060
+Attention (Prefill, 32 tok)     0.436
+Attention (Decode, 1 tok)       0.093
+Top-K Sampling                  2.410
+----------------------------------------------------------------------
+
+Theoretical decode throughput: ~386.6 tokens/second
+(Based on individual operation timings)
+
+======================================================================
+✓ BENCHMARK COMPLETE!
+======================================================================
+```
+
+**Note:** This benchmark output demonstrates kernel-level performance. Actual model generation performance depends on the complete architecture and is typically lower. See the "Performance Snapshot" section for real-world generation speeds.
 
 ---
 
-## 🚀 Usage (Conceptual)
+## 🛠️ Installation
 
-1. Load model weights
-2. Enable Jet Mode
-3. Generate tokens with streaming support
+### Prerequisites
+- Python 3.8 or higher
+- pip package manager
 
-Developer note:
-Enable use_cache=True to fully benefit from KV caching.
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/sixfingerdev/TurboTensors.git
+cd TurboTensors
+```
+
+### Step 2: Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+The following packages will be installed:
+- **numpy** (>=1.21.0) - Numerical computing
+- **numba** (>=0.56.0) - JIT compilation for performance
+- **transformers** (>=4.30.0) - Model tokenizer support
+- **huggingface_hub** (>=0.16.0) - Model downloading
+
+**Optional dependency:**
+- **torch** (>=2.0.0) - Only needed for Hugging Face comparison benchmarks (commented out in requirements.txt)
+
+### Step 3: Run the Code
+```bash
+python main.py
+```
+
+---
+
+## 🚀 Usage
+
+### Basic Usage
+
+```python
+from main import TurboLLM, download_model
+from transformers import AutoTokenizer
+
+# Define model to use
+model_id = "sixfingerdev/kayra-1-exp"
+
+# Download and load model
+model_path = download_model(model_id)
+model = TurboLLM(model_path)
+
+# Load tokenizer (must match the model)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+# Generate text
+output = model.generate(
+    "Türkiye",
+    max_new_tokens=50,
+    temperature=0.8,
+    top_k=50,
+    repetition_penalty=1.2,
+    tokenizer=tokenizer,
+    stream=True
+)
+
+print(output)
+```
+
+### Advanced Options
+
+```python
+# Custom generation parameters
+output = model.generate(
+    prompt="Your prompt here",
+    max_new_tokens=100,        # Number of tokens to generate
+    temperature=0.8,            # Sampling temperature (0.0-2.0)
+    top_k=50,                   # Top-K sampling
+    repetition_penalty=1.2,     # Penalize repeated tokens
+    tokenizer=tokenizer,
+    stream=True                 # Stream output token by token
+)
+```
+
+**Note:** KV caching is automatically enabled during generation to maximize performance. The engine reuses key/value tensors during autoregressive decoding, significantly reducing redundant computations.
 
 ---
 
