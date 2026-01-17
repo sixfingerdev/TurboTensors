@@ -180,7 +180,7 @@ The following packages will be installed:
 - **huggingface_hub** (>=0.16.0) - Model downloading
 
 **Optional dependency:**
-- **torch** (>=2.0.0) - Only needed for HuggingFace comparison benchmarks (commented out in requirements.txt)
+- **torch** (>=2.0.0) - Only needed for Hugging Face comparison benchmarks (commented out in requirements.txt)
 
 ### Step 3: Run the Code
 ```bash
@@ -197,12 +197,15 @@ python main.py
 from main import TurboLLM, download_model
 from transformers import AutoTokenizer
 
+# Define model to use
+model_id = "sixfingerdev/kayra-1-exp"
+
 # Download and load model
-model_path = download_model("sixfingerdev/kayra-1-exp")
+model_path = download_model(model_id)
 model = TurboLLM(model_path)
 
-# Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained("sixfingerdev/kayra-1-exp")
+# Load tokenizer (must match the model)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 # Generate text
 output = model.generate(
