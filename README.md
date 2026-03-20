@@ -1,4 +1,4 @@
-# ⚡ TurboTensors v4.0 — JET MODE (Experimental)
+# ⚡ TurboTensors v4.1 — JET MODE (Experimental)
 
 TurboTensors is an experimental, low-level CPU inference engine focused on minimizing framework overhead and maximizing real-time token generation on low-end and mid-range CPUs.
 
@@ -48,13 +48,26 @@ The goal is predictable, low-latency inference, not peak FLOPS.
 
 ---
 
+## 🆕 v4.1 Update (High-CPU + Constrained-CPU Tuning)
+
+Latest optimization pass focused on both high-core CPUs and low-resource profiles.
+
+Key changes included in v4.1:
+- Faster decode attention path for single-token generation (vectorized implementation)
+- Lower decode loop allocation overhead (buffer reuse)
+- Faster Top-K sampling path using partial partitioning
+- Reduced cache-reset overhead between generations
+- Better small-batch behavior with serial kernel fallback where parallel overhead dominates
+
+---
+
 ## 📊 Performance Snapshot
 
 Test model: Kayra-1-exp (~85M parameters)
 Hardware: consumer-grade laptop CPU (non-server, non-AVX512)
 
-TurboTensors v4: ~45–60 tokens/s, very low first-token latency  
-HuggingFace (CPU): ~12–18 tokens/s, high first-token latency
+TurboTensors v4.1: ~55-65 tokens/s (observed), very low first-token latency  
+HuggingFace (CPU): ~40-45 tokens/s (same machine, same model, comparison path)
 
 NOTE:
 Results are hardware-dependent and primarily reflect performance on low to mid-tier CPUs.
@@ -63,6 +76,40 @@ On high-end CPUs, optimized BLAS-based engines may outperform TurboTensors.
 ---
 
 ## 🔬 Benchmark Results
+
+### End-to-End Generation (Latest)
+
+Measured with `max_new_tokens=50` and the built-in benchmark/comparison flow on the current optimized code path:
+
+| Engine | Speed (tokens/s) | Notes |
+|--------|------------------|-------|
+| TurboTensors v4.1 | 60.9 | Same model/tokenizer, CPU-only |
+| HuggingFace CPU | 41.9 | Same machine/model, torch float32 |
+
+Relative result on this run: **TurboTensors ~1.5x faster**.
+
+### Constrained CPU Benchmark (Raspberry Pi-like Simulation)
+
+To emulate a low-resource environment, CPU threads were hard-limited (`OMP/MKL/OPENBLAS/NUMBA`, plus torch thread limits). This is a thread-constrained simulation, not a true ARM hardware benchmark.
+
+Test setup:
+- Model: `sixfingerdev/kayra-1-exp`
+- Prompt: `Türkiye`
+- `max_new_tokens=50`, `runs=3`
+
+| Threads | TurboTensors AVG (tok/s) | TurboTensors BEST (tok/s) | HuggingFace (tok/s) | TurboTensors / HF |
+|---------|---------------------------|----------------------------|---------------------|-------------------|
+| 1 | 74.55 | 81.84 | 15.75 | 4.74x |
+| 2 | 80.67 | 87.43 | 27.96 | 2.89x |
+| 4 | 84.30 | 91.31 | 43.93 | 1.92x |
+
+Interpretation:
+- TurboTensors remains significantly ahead under strict CPU limits.
+- As thread count increases, HuggingFace scales up, but TurboTensors still leads in these tests.
+
+---
+
+### Core Operation Micro-Benchmarks (Reference)
 
 Benchmarks of core TurboTensors operations running on a GitHub Actions runner (Ubuntu, 4-core CPU).
 
@@ -86,7 +133,7 @@ Benchmarks of core TurboTensors operations running on a GitHub Actions runner (U
 - *Multiple layer traversals*
 - *Additional operations (embedding lookups, projections, etc.)*
 
-For real-world performance, refer to the "Performance Snapshot" section above showing ~45-60 tokens/s on consumer hardware.
+For real-world performance, refer to the "Performance Snapshot" section above showing ~55-65 tokens/s on consumer hardware.
 
 ### Key Performance Characteristics
 

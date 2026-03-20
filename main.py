@@ -12,6 +12,8 @@ import json
 import struct
 import time
 import os
+import io
+import contextlib
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from numba import njit, prange
@@ -55,6 +57,21 @@ def fast_rms_norm(x, weight, eps):
             out[b, i] = x[b, i] * rms_inv * weight[i]
     return out
 
+@njit(fastmath=True, nogil=True)
+def fast_rms_norm_serial(x, weight, eps):
+    """Batched RMSNorm without thread scheduling overhead for tiny batches"""
+    B, D = x.shape
+    out = np.empty((B, D), dtype=np.float32)
+
+    for b in range(B):
+        sum_sq = 0.0
+        for i in range(D):
+            sum_sq += x[b, i] * x[b, i]
+        rms_inv = 1.0 / np.sqrt(sum_sq / D + eps)
+        for i in range(D):
+            out[b, i] = x[b, i] * rms_inv * weight[i]
+    return out
+
 @njit(parallel=True, fastmath=True, nogil=True)
 def fast_silu_mul(h1, h3):
     """Fused SiLU(x) * gate"""
@@ -65,6 +82,23 @@ def fast_silu_mul(h1, h3):
         for i in range(D):
             val = h1[b, i]
             # Stable sigmoid
+            if val >= 0:
+                sigmoid = 1.0 / (1.0 + np.exp(-val))
+            else:
+                exp_val = np.exp(val)
+                sigmoid = exp_val / (1.0 + exp_val)
+            out[b, i] = val * sigmoid * h3[b, i]
+    return out
+
+@njit(fastmath=True, nogil=True)
+def fast_silu_mul_serial(h1, h3):
+    """Fused SiLU(x) * gate without parallel overhead for tiny batches"""
+    B, D = h1.shape
+    out = np.empty((B, D), dtype=np.float32)
+
+    for b in range(B):
+        for i in range(D):
+            val = h1[b, i]
             if val >= 0:
                 sigmoid = 1.0 / (1.0 + np.exp(-val))
             else:
@@ -134,6 +168,20 @@ def fast_attention_decode(q, k_cache, v_cache, scale, current_pos):
                 out[b, h, 0, d] = acc * inv_sum
     
     return out
+
+
+def fast_attention_decode_numpy(q, k_cache, v_cache, scale, current_pos):
+    """Vectorized single-token attention optimized for long decode caches."""
+    q2 = q[:, :, 0, :]  # (B, H, D)
+    k2 = k_cache[:, :, :current_pos, :]  # (B, H, T_k, D)
+    v2 = v_cache[:, :, :current_pos, :]  # (B, H, T_k, D)
+
+    scores = np.einsum('bhd,bhtd->bht', q2, k2, optimize=True) * scale
+    scores = scores - scores.max(axis=-1, keepdims=True)
+    probs = np.exp(scores)
+    probs = probs / (probs.sum(axis=-1, keepdims=True) + 1e-10)
+    out = np.einsum('bht,bhtd->bhd', probs, v2, optimize=True)
+    return out[:, :, None, :]
 
 @njit(parallel=True, fastmath=True, nogil=True)
 def fast_attention_prefill(q, k, v, scale):
@@ -296,7 +344,9 @@ def warmup_jit(hidden_size=640, n_heads=10, head_dim=64, vocab_size=32000):
     # Warmup each kernel
     _ = _fast_rms_norm_1d(x1[0], w, 1e-6)
     _ = fast_rms_norm(x2, w, 1e-6)
+    _ = fast_rms_norm_serial(x2, w, 1e-6)
     _ = fast_silu_mul(h1, h1)
+    _ = fast_silu_mul_serial(h1, h1)
     
     table = np.random.randn(100, D).astype(np.float32)
     ids = np.array([[0, 1, 2]], dtype=np.int64)
@@ -431,9 +481,12 @@ class RMSNorm:
     def __call__(self, x: np.ndarray) -> np.ndarray:
         orig_shape = x.shape
         x_2d = np.ascontiguousarray(x.reshape(-1, x.shape[-1]))
+        rows = x_2d.shape[0]
         
-        if x_2d.shape[0] == 1:
+        if rows == 1:
             out = _fast_rms_norm_1d(x_2d[0], self.weight, self.eps).reshape(1, -1)
+        elif rows <= 8:
+            out = fast_rms_norm_serial(x_2d, self.weight, self.eps)
         else:
             out = fast_rms_norm(x_2d, self.weight, self.eps)
         
@@ -450,7 +503,9 @@ class Linear:
     
     def __call__(self, x: np.ndarray) -> np.ndarray:
         # NumPy BLAS
-        out = x.astype(np.float32) @ self.weight_T
+        if x.dtype != np.float32:
+            x = x.astype(np.float32, copy=False)
+        out = x @ self.weight_T
         if self.bias is not None:
             out = out + self.bias
         return out
@@ -472,7 +527,10 @@ class FeedForward:
         orig_shape = h1.shape
         h1_2d = np.ascontiguousarray(h1.reshape(-1, h1.shape[-1]))
         h3_2d = np.ascontiguousarray(h3.reshape(-1, h3.shape[-1]))
-        fused = fast_silu_mul(h1_2d, h3_2d).reshape(orig_shape)
+        if h1_2d.shape[0] <= 8:
+            fused = fast_silu_mul_serial(h1_2d, h3_2d).reshape(orig_shape)
+        else:
+            fused = fast_silu_mul(h1_2d, h3_2d).reshape(orig_shape)
         
         return self.w2(fused)
 
@@ -523,7 +581,7 @@ class Attention:
             # Choose path
             if T == 1:
                 # Decode
-                attn_out = fast_attention_decode(
+                attn_out = fast_attention_decode_numpy(
                     np.ascontiguousarray(q),
                     self.k_cache,
                     self.v_cache,
@@ -551,9 +609,7 @@ class Attention:
         return self.proj(out)
     
     def clear_cache(self):
-        if self.k_cache is not None:
-            self.k_cache.fill(0)
-            self.v_cache.fill(0)
+        # Resetting only the cursor is enough; past values are ignored.
         self.current_pos = 0
 
 
@@ -749,23 +805,40 @@ class TurboLLM:
             self._log(f"   Prefill: {len(input_ids)} toks @ {len(input_ids)/prefill_time:.1f} tok/s")
         
         decode_start = time.time()
+        new_token_buf = np.empty((1, 1), dtype=np.int64)
         
         # DECODE
         for i in range(max_new_tokens):
-            last_logits = logits[0, -1].astype(np.float32).copy()
+            last_logits = logits[0, -1]
             
             # Repetition penalty
             if repetition_penalty != 1.0:
-                gen_arr = np.array(generated[-512:], dtype=np.int64)
-                unique_toks = get_unique_tokens(gen_arr, 512)
-                last_logits = apply_repetition_penalty_fast(last_logits, unique_toks, repetition_penalty)
+                last_logits = last_logits.astype(np.float32, copy=True)
+                unique_toks = np.unique(np.asarray(generated[-512:], dtype=np.int64))
+                vals = last_logits[unique_toks]
+                pos_mask = vals > 0
+                vals[pos_mask] /= repetition_penalty
+                vals[~pos_mask] *= repetition_penalty
+                last_logits[unique_toks] = vals
             
             # Sample
             if top_k > 0:
-                top_k_idx, probs = fast_top_k_sample(last_logits, top_k, temperature)
+                if temperature == 1.0:
+                    scaled = last_logits
+                else:
+                    scaled = last_logits / temperature
+                k = min(top_k, scaled.shape[0])
+                top_k_idx = np.argpartition(scaled, -k)[-k:]
+                top_k_logits = scaled[top_k_idx]
+                top_k_logits = top_k_logits - top_k_logits.max()
+                probs = np.exp(top_k_logits)
+                probs = probs / probs.sum()
                 next_token = int(np.random.choice(top_k_idx, p=probs))
             else:
-                scaled = last_logits / temperature
+                if temperature == 1.0:
+                    scaled = last_logits
+                else:
+                    scaled = last_logits / temperature
                 scaled = scaled - scaled.max()
                 probs = np.exp(scaled)
                 probs = probs / probs.sum()
@@ -778,8 +851,8 @@ class TurboLLM:
                 print(tokenizer.decode([next_token]), end='', flush=True)
             
             # Forward
-            new_token = np.array([[next_token]], dtype=np.int64)
-            logits = self.forward(new_token, use_cache=True)
+            new_token_buf[0, 0] = next_token
+            logits = self.forward(new_token_buf, use_cache=True)
             
             # Progress
             if self.verbose and (i + 1) % 10 == 0:
@@ -875,26 +948,58 @@ if __name__ == "__main__":
     
     try:
         import torch
+        import builtins
         from transformers import AutoModelForCausalLM
         
-        hf_model = AutoModelForCausalLM.from_pretrained(
-            "sixfingerdev/kayra-1-exp", trust_remote_code=True, torch_dtype=torch.float32
-        )
+        _orig_print = builtins.print
+
+        def _filtered_print(*args, **kwargs):
+            text = " ".join(str(a) for a in args)
+            if (
+                "LOAD REPORT" in text
+                or "lm_head.weight" in text
+                or "MISSING" in text
+                or "those params were newly initialized" in text
+            ):
+                return
+            _orig_print(*args, **kwargs)
+
+        builtins.print = _filtered_print
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                hf_model = AutoModelForCausalLM.from_pretrained(
+                    "sixfingerdev/kayra-1-exp", trust_remote_code=True, dtype=torch.float32
+                )
+        finally:
+            builtins.print = _orig_print
+
+        # Some checkpoints omit lm_head when output/input embeddings are tied.
+        if hasattr(hf_model, "lm_head") and hasattr(hf_model, "get_input_embeddings"):
+            input_emb = hf_model.get_input_embeddings()
+            if input_emb is not None and getattr(hf_model.lm_head, "weight", None) is None:
+                hf_model.lm_head.weight = input_emb.weight
+            elif input_emb is not None and hf_model.lm_head.weight.shape != input_emb.weight.shape:
+                hf_model.lm_head.weight = input_emb.weight
+            if hasattr(hf_model, "tie_weights"):
+                hf_model.tie_weights()
+
         hf_model.eval()
         
         input_torch = torch.tensor([tokenizer.encode("Türkiye")])
         
         # Warmup
-        with torch.no_grad():
-            _ = hf_model.generate(input_torch, max_new_tokens=5, do_sample=True)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with torch.no_grad():
+                _ = hf_model.generate(input_torch, max_new_tokens=5, do_sample=True)
         
         # Benchmark
         times = []
         for _ in range(3):
             start = time.time()
-            with torch.no_grad():
-                _ = hf_model.generate(input_torch, max_new_tokens=50, temperature=0.8,
-                                     do_sample=True, top_k=50, repetition_penalty=1.3)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with torch.no_grad():
+                    _ = hf_model.generate(input_torch, max_new_tokens=50, temperature=0.8,
+                                         do_sample=True, top_k=50, repetition_penalty=1.3)
             times.append(time.time() - start)
         
         hf_speed = 50 / (sum(times) / len(times))
