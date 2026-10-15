@@ -18,6 +18,7 @@ All numbers: 4-vCPU cloud container, not consumer hardware, small samples (query
 | `capacity.py` | Recall accuracy of the state vs number of stored bindings (random unit keys, no learning) |
 | `compass_stream.py` | Full trained COMPASS model (router, product-binding keys, FFN, LayerNorm) in numpy + the Numba kernel, one token at a time |
 | `test_stream_parity.py` | Streaming port vs torch model on the checkpoint: max logit diff 2.1e-5, 1024/1024 argmax agree |
+| `eval_load.py` | Zero-shot test with more live facts than the model was trained on |
 | `eval_stream.py` | Streaming accuracy / tokens/s at long lengths, optional `--decay` override |
 | `checkpoints/facts4_L128_s0.pt` | The trained model (`python compass.py facts4 128 0 3000 64 1 8`, 901 s on this CPU) |
 
@@ -77,6 +78,14 @@ Tessera repo, `checkpoints/facts4_L128_s0_nodecay.pt`, 100% in-distribution, 850
 
 Note the load: the generator stores 4 or 8 facts per sequence however long the sequence is, so 8 live bindings against D=64
 (0.125 x D), well inside the capacity curve of part 2. It shows the state survives length, not that it survives a flood of facts.
+Zero-shot higher load (`eval_load.py`: facts8-trained model, `M` live facts, 6 sequences; generator max is 18 distinct pairs):
+
+| Length | M=8 | M=12 | M=16 | M=18 |
+|---|---:|---:|---:|---:|
+| 1,024 | 100% | 98.6% | 100% | 100% |
+| 16,384 | 100% | 100% | 99.0% | 98.1% |
+
+Still only 0.28 x D at M=18, so the capacity knee of part 2 is not reached here either.
 Parity vs torch for the facts4 no-decay checkpoint: max logit diff 1.6e-5. The one miss at 65k (1 of 24) is the only error seen; with so few
 queries it is not enough to say whether accumulated write-gate leakage starts to bite there.
 
