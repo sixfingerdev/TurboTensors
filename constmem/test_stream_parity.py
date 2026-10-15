@@ -1,12 +1,12 @@
 """Streaming numpy/Numba port vs the torch CompassModel it was trained as (facts4 checkpoint)."""
-import sys, time
+import os, sys, time
 import numpy as np, torch
 sys.path.insert(0, "."); sys.path.insert(0, "../../tessera")
 from compass import CompassModel
 from lodestar import TASKS
 from compass_stream import StreamModel
 
-CK = "checkpoints/facts4_L128_s0.pt"
+CK = os.environ.get("CKPT", "checkpoints/facts4_L128_s0.pt")
 
 
 def load():

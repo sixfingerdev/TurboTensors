@@ -26,7 +26,7 @@ cd constmem
 python test_parity.py
 python bench_context.py
 python capacity.py
-python test_stream_parity.py   # needs ../../tessera next to this repo, and torch
+CKPT=checkpoints/facts4_L128_s0_nodecay.pt python test_stream_parity.py   # CKPT selects the checkpoint; needs ../../tessera next to this repo, and torch
 python eval_stream.py --decay 1.0 --lens 1024 4096 16384 65536
 ```
 
@@ -62,11 +62,20 @@ Speed is ~3,000 tokens/s, limited by numpy/Python overhead per token, not by the
 | 16,384 | - | 100% (24 queries) |
 | 65,536 | - | 100% (24 queries) |
 
-Reading: the model forgets because training taught it a per-step decay of ~0.998 (memory horizon of a few hundred
+Trained without decay from the start (`COMPASS_NO_DECAY=1 python compass.py facts4 128 0 3000 64 1 8`, new flag in the
+Tessera repo, `checkpoints/facts4_L128_s0_nodecay.pt`, 100% in-distribution, 850 s): no train/test mismatch.
+
+| Length | 128 | 1,024 | 4,096 | 16,384 | 65,536 |
+|---|---:|---:|---:|---:|---:|
+| No-decay model (24 queries each) | 100% | 100% | 100% | 100% | 95.8% |
+
+Parity vs torch for this checkpoint: max logit diff 1.6e-5. The one miss at 65k (1 of 24) is the only error seen; with so few
+queries it is not enough to say whether accumulated write-gate leakage starts to bite there.
+
+Reading, for the first checkpoint: the model forgets because training taught it a per-step decay of ~0.998 (memory horizon of a few hundred
 tokens: 0.998^4096 is ~3e-4). Removing the decay at inference, a train/test mismatch used here as an **ablation**,
 keeps recall at 100% to 65k tokens (512x the training length) with 4 stored facts. That load is far below the capacity knee
-of part 2, so this does **not** show that a decay-free model would survive heavy load; training with a decay
-schedule that matches the target length is the open follow-up. Chance level on this task is 12.5-25%.
+of part 2, so this does **not** show that a decay-free model would survive heavy load; the no-decay run above is that follow-up for 4 facts; heavier load at length is still untested. Chance level on this task is 12.5-25%.
 
 Cost of the same layer shape (1 head, D=64) as a KV-cache decode step, per layer:
 
@@ -87,4 +96,4 @@ Both are worth fixing at the source; the port reproduces them so parity with the
 - Natural-language quality of COMPASS layers is unmeasured; only a synthetic recall task was trained.
 - No tokens/s against a trained KV-cache model on the same task (kernel-level costs only, above).
 - Not integrated into `TurboLLM`/`TransformerBlock` (needs a trained hybrid model to be meaningful).
-- Fix the two quirks above in Tessera, retrain, and retry the 65k test with a length-matched decay.
+- Fix the two quirks above in Tessera and retrain; test more queries per length and higher fact load (`facts8`) at 16k-65k.
