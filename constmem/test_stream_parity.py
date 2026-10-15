@@ -6,6 +6,7 @@ from compass import CompassModel
 from lodestar import TASKS
 from compass_stream import StreamModel
 
+FIX = os.environ.get("FIXPOOLS") == "1"
 CK = os.environ.get("CKPT", "checkpoints/facts4_L128_s0.pt")
 
 
@@ -13,9 +14,9 @@ def load():
     gen, vocab = TASKS[os.environ.get("TASK", "facts4")]
     m = CompassModel(vocab, d=64, layers=2, d_state=64, heads=1, ctx_w=24)
     for l in m.layers:
-        l.q_pooled = True; l.k_prod = True; l.set_pool_balance(0.03)
+        l.q_pooled = True; l.k_prod = True; l.fix_pools = FIX; l.set_pool_balance(0.03)
     sd = torch.load(CK, map_location="cpu"); m.load_state_dict(sd); m.eval()
-    return gen, m, StreamModel(sd, layers=2, H=1, Ds=64)
+    return gen, m, StreamModel(sd, layers=2, H=1, Ds=64, fix_pools=FIX)
 
 
 def stream_logits(sm, ids):

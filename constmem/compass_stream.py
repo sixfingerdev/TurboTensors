@@ -37,14 +37,16 @@ def _unit(x, eps=1e-12):
 
 
 class StreamLayer:
-    def __init__(self, sd, prefix, H, Ds, ctx_w):
+    def __init__(self, sd, prefix, H, Ds, ctx_w, fix_pools=False, pb=0.03):
         g = lambda n: sd[prefix + n].detach().cpu().numpy().astype(np.float64)
         self.H, self.Ds, self.w = H, Ds, ctx_w
+        self.fix_pools, self.pb = fix_pools, pb
         self.d = g("Wc.weight").shape[0]
         self.Wc, self.bc = g("Wc.weight"), g("Wc.bias")
         self.pool_u = g("pool_u")
         self.RA, self.RB = g("RA"), g("RB")
         self.prod_rb = g("prod_rb")[:ctx_w]
+        self.uA, self.uB, self.temp = g("uA"), g("uB"), float(g("prod_temp"))
         self.Wv = g("Wv.weight")
         self.Wg, self.bg = g("Wg.weight"), g("Wg.bias")
         beta = 2 * _sig(g("beta")); decay = _sig(g("logit_decay"))
@@ -72,12 +74,21 @@ class StreamLayer:
         # router (salience pool, used for the write gate): invalid offsets sit at -1e4
         s = self.hist @ self.pool_u
         sc = np.full(w, -1e4); sc[:self.nvalid] = s[:self.nvalid]
+        if self.fix_pools:
+            sc[:self.nvalid] += self.pb * np.arange(self.nvalid)
         A = _softmax(sc)
         ctx = A @ self.hist
         r = x + self.Wc @ ctx + self.bc
         # product-binding pools: weights from the fixed recency bias only
-        Ap = _softmax(self.prod_rb)                  # same for A and B pools (constant cancels)
-        PA = PB = Ap @ self.hist
+        if self.fix_pools:                           # salience scores the source token
+            def pool(u):
+                sc = np.full(w, -1e4)
+                sc[:self.nvalid] = (self.hist[:self.nvalid] @ u) * self.temp + self.prod_rb[:self.nvalid]
+                return _softmax(sc) @ self.hist
+            PA, PB = pool(self.uA), pool(self.uB)
+        else:
+            Ap = _softmax(self.prod_rb)              # same for A and B pools (constant cancels)
+            PA = PB = Ap @ self.hist
         key = _unit(_unit(PA @ self.RA) * _unit(PB @ self.RB))
         H, Ds = self.H, self.Ds
         k = np.tile(key, (H, 1)).astype(np.float32) if H == 1 else key.reshape(H, Ds).astype(np.float32)
@@ -91,11 +102,11 @@ class StreamLayer:
 
 
 class StreamModel:
-    def __init__(self, sd, layers, H, Ds, ctx_w=24):
+    def __init__(self, sd, layers, H, Ds, ctx_w=24, fix_pools=False):
         g = lambda n: sd[n].detach().cpu().numpy().astype(np.float64)
         self.emb = g("emb.weight"); self.d = self.emb.shape[1]
         self.Wout, self.bout = g("out.weight"), g("out.bias")
-        self.layers = [StreamLayer(sd, f"layers.{i}.", H, Ds, ctx_w) for i in range(layers)]
+        self.layers = [StreamLayer(sd, f"layers.{i}.", H, Ds, ctx_w, fix_pools) for i in range(layers)]
 
     def reset(self):
         for l in self.layers: l.reset()

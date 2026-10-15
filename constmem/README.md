@@ -107,7 +107,11 @@ Cost of the same layer shape (1 head, D=64) as a KV-cache decode step, per layer
   survives on invalid offsets.
 - `prod_pools()`: the salience score is the current token's, repeated across all offsets, so the softmax cancels it.
   `uA`/`uB` receive no gradient and `PA == PB`; the "role seeking" is really a fixed recency average.
-Both are worth fixing at the source; the port reproduces them so parity with the checkpoint holds.
+Opt-in fix in Tessera: `COMPASS_FIX_POOLS=1` (default behaviour unchanged). The port supports both (`fix_pools`), parity holds
+for both (max logit diff 9e-6 with the fix). Result, facts4 trained with `COMPASS_NO_DECAY=1 COMPASS_FIX_POOLS=1`
+(`checkpoints/facts4_L128_s0_fixpools_nodecay.pt`, 100% in-distribution): 100% at 1k / 4k / 16k, 91.7% at 65k (24 queries each).
+Versus 100 / 100 / 100 / 95.8% without the fix: no measurable difference on this task. With a single missed-query difference of 1-2 in 24, any
+benefit or harm is within noise. Role salience is simply not needed for facts4, because recency alone separates name from object.
 
 ## Not shown / next steps
 - Natural-language quality of COMPASS layers is unmeasured; only a synthetic recall task was trained.
