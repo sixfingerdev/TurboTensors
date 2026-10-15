@@ -26,7 +26,7 @@ cd constmem
 python test_parity.py
 python bench_context.py
 python capacity.py
-CKPT=checkpoints/facts4_L128_s0_nodecay.pt python test_stream_parity.py   # CKPT selects the checkpoint; needs ../../tessera next to this repo, and torch
+CKPT=checkpoints/facts4_L128_s0_nodecay.pt python test_stream_parity.py   # CKPT / TASK select the checkpoint and task (default facts4); needs ../../tessera next to this repo, and torch
 python eval_stream.py --decay 1.0 --lens 1024 4096 16384 65536
 ```
 
@@ -69,7 +69,15 @@ Tessera repo, `checkpoints/facts4_L128_s0_nodecay.pt`, 100% in-distribution, 850
 |---|---:|---:|---:|---:|---:|
 | No-decay model (24 queries each) | 100% | 100% | 100% | 100% | 95.8% |
 
-Parity vs torch for this checkpoint: max logit diff 1.6e-5. The one miss at 65k (1 of 24) is the only error seen; with so few
+`facts8` (8 facts per sequence, trained the same way, `checkpoints/facts8_L128_s0_nodecay.pt`, 850 s), 80 queries per length:
+
+| Length | 128 | 1,024 | 4,096 | 16,384 | 65,536 |
+|---|---:|---:|---:|---:|---:|
+| facts8, no decay | 100% | 100% | 100% | 100% | 100% |
+
+Note the load: the generator stores 4 or 8 facts per sequence however long the sequence is, so 8 live bindings against D=64
+(0.125 x D), well inside the capacity curve of part 2. It shows the state survives length, not that it survives a flood of facts.
+Parity vs torch for the facts4 no-decay checkpoint: max logit diff 1.6e-5. The one miss at 65k (1 of 24) is the only error seen; with so few
 queries it is not enough to say whether accumulated write-gate leakage starts to bite there.
 
 Reading, for the first checkpoint: the model forgets because training taught it a per-step decay of ~0.998 (memory horizon of a few hundred
@@ -96,4 +104,4 @@ Both are worth fixing at the source; the port reproduces them so parity with the
 - Natural-language quality of COMPASS layers is unmeasured; only a synthetic recall task was trained.
 - No tokens/s against a trained KV-cache model on the same task (kernel-level costs only, above).
 - Not integrated into `TurboLLM`/`TransformerBlock` (needs a trained hybrid model to be meaningful).
-- Fix the two quirks above in Tessera and retrain; test more queries per length and higher fact load (`facts8`) at 16k-65k.
+- Fix the two quirks above in Tessera and retrain; test a fact load that approaches D (tens of live facts) at 16k-65k.

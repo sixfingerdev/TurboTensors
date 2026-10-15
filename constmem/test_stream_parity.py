@@ -10,7 +10,7 @@ CK = os.environ.get("CKPT", "checkpoints/facts4_L128_s0.pt")
 
 
 def load():
-    gen, vocab = TASKS["facts4"]
+    gen, vocab = TASKS[os.environ.get("TASK", "facts4")]
     m = CompassModel(vocab, d=64, layers=2, d_state=64, heads=1, ctx_w=24)
     for l in m.layers:
         l.q_pooled = True; l.k_prod = True; l.set_pool_balance(0.03)
