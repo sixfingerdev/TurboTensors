@@ -28,8 +28,9 @@ prefill+decode vs full forward 6e-7; numpy/Numba stream engine vs torch on real 
 | Gated delta (`GGGGGG`) | 7.3M | 5.905 | 104.4 | 106.3 |
 | Hybrid (`GGAGGA`) | 7.1M | 5.987 | 113.1 | 115.2 |
 
-Original COMPASS is competitive per token early on but its Python time loop and fact-binding router make it ~8x
-slower (450 vs 3,500+ tok/s), so it could only be run to 1M tokens. That is why the delta layer was generalised.
+Original COMPASS is competitive per token early on, but its Python time loop and fact-binding router run at ~1.1k tok/s
+(fp32) against ~5k tok/s for the delta layer (bf16; part of the gap is precision), so it was only run to 1M tokens, where
+all four models are within ~0.08 nats. That is why the delta layer was generalised.
 
 ## Step 2: 40M tokens (4,882 steps x 8,192 tokens)
 | Model | Params | val ppl | **test ppl** | test bits/byte | train time |
