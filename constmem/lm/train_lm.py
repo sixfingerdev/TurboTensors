@@ -57,6 +57,7 @@ def main():
     ap.add_argument("--tokens", type=float, default=20e6); ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--warmup", type=int, default=100); ap.add_argument("--bf16", action="store_true")
     ap.add_argument("--eval-every", type=int, default=500); ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--resume", type=int, default=0, help="continue from <out>/<name>.pt saved at this step")
     ap.add_argument("--threads", type=int, default=4); ap.add_argument("--max-minutes", type=float, default=1e9)
     a = ap.parse_args()
     torch.set_num_threads(a.threads); torch.manual_seed(a.seed)
@@ -66,13 +67,19 @@ def main():
     steps = int(a.tokens // (a.B * a.T))
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, betas=(0.9, 0.95), weight_decay=0.1)
     lr_at = lambda s: a.lr * (s + 1) / a.warmup if s < a.warmup else 0.1 * a.lr + 0.9 * a.lr * 0.5 * (1 + math.cos(math.pi * (s - a.warmup) / max(1, steps - a.warmup)))
-    gen = batches(os.path.join(a.data, "train.bin"), a.B, a.T, a.seed)
+    start = 0
+    if a.resume:
+        ck = torch.load(os.path.join(a.out, f"{a.name}.pt"), map_location="cpu")
+        model.load_state_dict(ck["sd"]); start = a.resume
+        if "opt" in ck: opt.load_state_dict(ck["opt"])
+        else: print("resume: no optimizer state in checkpoint, Adam moments restart from zero", flush=True)
+    gen = batches(os.path.join(a.data, "train.bin"), a.B, a.T, a.seed + start)   # fresh data order after a restart
     log = open(os.path.join(a.out, f"{a.name}.log"), "a")
     def say(m):
         print(m, flush=True); log.write(m + "\n"); log.flush()
     say(f"[{a.name}] layers={a.layers} d={a.d} params={P:,} steps={steps} tokens/step={a.B*a.T} bf16={a.bf16}")
     t0 = time.time(); hist = []
-    for s in range(steps):
+    for s in range(start, steps):
         for g in opt.param_groups: g["lr"] = lr_at(s)
         x, y = next(gen)
         with torch.autocast("cpu", dtype=torch.bfloat16, enabled=a.bf16):
@@ -81,13 +88,13 @@ def main():
         opt.zero_grad(set_to_none=True); loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
         if s % 50 == 0:
-            say(f"[{a.name}] step {s}/{steps} loss {loss.item():.3f} lr {lr_at(s):.2e} {((s+1)*a.B*a.T)/(time.time()-t0):.0f} tok/s ({(time.time()-t0)/60:.1f} min)")
+            say(f"[{a.name}] step {s}/{steps} loss {loss.item():.3f} lr {lr_at(s):.2e} {((s+1-start)*a.B*a.T)/(time.time()-t0):.0f} tok/s ({(time.time()-t0)/60:.1f} min)")
         last = s == steps - 1 or (time.time() - t0) / 60 > a.max_minutes
         if (s + 1) % a.eval_every == 0 or last:
             vl = evaluate(model, os.path.join(a.data, "val.bin"), a.T, bf16=a.bf16)
             hist.append(dict(step=s + 1, tokens=(s + 1) * a.B * a.T, val_loss=vl, minutes=(time.time() - t0) / 60))
             say(f"[{a.name}] VAL step {s+1} loss {vl:.4f} ppl {math.exp(vl):.1f}")
-            torch.save(dict(cfg=model.c.__dict__, sd=model.state_dict()), os.path.join(a.out, f"{a.name}.pt"))
+            torch.save(dict(cfg=model.c.__dict__, sd=model.state_dict(), opt=opt.state_dict(), step=s + 1), os.path.join(a.out, f"{a.name}.pt"))
         if last: break
     tl = evaluate(model, os.path.join(a.data, "test.bin"), a.T, bf16=a.bf16)
     res = dict(name=a.name, layers=a.layers, params=P, tokens=(s + 1) * a.B * a.T, val=hist[-1]["val_loss"], test_loss=tl,
