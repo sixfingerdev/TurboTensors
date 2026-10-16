@@ -5,17 +5,21 @@ Nothing grows with the number of tokens generated or read.
 
     python stream_lm.py CKPT TOKENIZER --prompt "Türkiye'nin başkenti" --n 80 --temp 0.8 --topk 40
 """
-import argparse, sys, time
+import argparse, os, sys, time
+# Single-token matvecs are tiny: multi-threaded BLAS (and a thread pool in the kernel) made one step ~20x
+# slower from oversubscription (40 ms vs 2 ms measured). Must be set before numpy is imported.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 import numpy as np
-from numba import njit, prange
+from numba import njit
 
 
-@njit(parallel=True, fastmath=True, nogil=True)
+@njit(fastmath=True, nogil=True)
 def gdn_step(S, q, k, v, beta, alpha, o):
     """S:(H,d,d) [key x value] in place; q,k,v:(H,d) f32; beta,alpha:(H,); o:(H,d).
     S <- alpha (S - beta k (k^T S)) + beta k v^T ;  o = S^T q   (read after write, same as models.delta_sequential)"""
     H, d, _ = S.shape
-    for h in prange(H):
+    for h in range(H):
         pred = np.zeros(d, dtype=np.float32)
         for i in range(d):
             ki = k[h, i]

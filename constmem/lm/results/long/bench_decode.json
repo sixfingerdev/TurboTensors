@@ -1,0 +1,57 @@
+[
+ {
+  "N": 256,
+  "attn_torch_ms": 3.4983274999831337,
+  "attn_state_MB": 3.15234375,
+  "hybrid_torch_ms": 6.647978500041063,
+  "hybrid_state_MB": 1.3359375,
+  "gdn_torch_ms": 6.341334999888204,
+  "gdn_state_MB": 0.427734375,
+  "gdn_numba_ms": 2.597995498945238,
+  "gdn_numba_state_MB": 0.427734375
+ },
+ {
+  "N": 4096,
+  "attn_torch_ms": 8.47884749964578,
+  "attn_state_MB": 48.15234375,
+  "hybrid_torch_ms": 7.362914502664353,
+  "hybrid_state_MB": 16.3359375,
+  "gdn_torch_ms": 6.791623000026448,
+  "gdn_state_MB": 0.427734375,
+  "gdn_numba_ms": 2.67336849901767,
+  "gdn_numba_state_MB": 0.427734375
+ },
+ {
+  "N": 16384,
+  "attn_torch_ms": 33.021060002283775,
+  "attn_state_MB": 192.15234375,
+  "hybrid_torch_ms": 16.565642999921693,
+  "hybrid_state_MB": 64.3359375,
+  "gdn_torch_ms": 6.04048400055035,
+  "gdn_state_MB": 0.427734375,
+  "gdn_numba_ms": 2.6992010007234057,
+  "gdn_numba_state_MB": 0.427734375
+ },
+ {
+  "N": 65536,
+  "attn_torch_ms": 211.1162544988474,
+  "attn_state_MB": 768.08203125,
+  "hybrid_torch_ms": 66.31602049856156,
+  "hybrid_state_MB": 256.3125,
+  "gdn_torch_ms": 4.901739501292468,
+  "gdn_state_MB": 0.427734375,
+  "gdn_numba_ms": 2.4048710001807194,
+  "gdn_numba_state_MB": 0.427734375
+ },
+ {
+  "N": 131072,
+  "attn_torch_ms": 394.65042899973923,
+  "attn_state_MB": 1536.08203125,
+  "hybrid_torch_ms": 137.48192700040818,
+  "hybrid_state_MB": 512.3125,
+  "gdn_torch_ms": 5.581384499237174,
+  "gdn_state_MB": 0.427734375,
+  "gdn_numba_ms": 2.475248500559246,
+  "gdn_numba_state_MB": 0.427734375
+ }
+]

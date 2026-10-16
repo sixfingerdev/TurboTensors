@@ -4,7 +4,9 @@
 Tessera's COMPASS layer keeps a fixed `Ds × Dv` delta-rule state per head instead. What does moving that
 recurrence onto TurboTensors' Numba/CPU stack buy, and what does it cost?
 
-**Scope (honest):** part 1-2 below are the bare recurrence at 1 layer / 10 heads / head dim 64. Part 3 is a *real
+**Update:** `lm/` trains real Turkish language models on this stack, see [`lm/README.md`](lm/README.md).
+
+**Scope (honest, parts 1-3):** part 1-2 below are the bare recurrence at 1 layer / 10 heads / head dim 64. Part 3 is a *real
 trained* COMPASS model (`facts4`, 2 layers, 111k params, 100% in-distribution) ported end to end and run
 token by token. It is a synthetic fact-recall task, **not** a language model, and nothing here is a text-quality claim.
 All numbers: 4-vCPU cloud container, not consumer hardware, small samples (query counts given).
